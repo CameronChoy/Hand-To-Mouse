@@ -1,6 +1,6 @@
 import sys
 import time
-from client import Client, MsgType
+from client import Client, MsgType, MouseStatus
 import mediapipe as mp
 import cv2
 
@@ -14,6 +14,13 @@ import cv2
 # result.multi_hand_landmarks = [landmark(x,y,z),...]
 # result.multi_hand_world_landmarks
 # result.multi_handedness
+CAMERA_FRAME_WIDTH = 1920
+CAMERA_FRAME_HEIGHT = 1080
+COMPUTE_FRAME_WIDTH = 960
+COMPUTE_FRAME_HEIGHT = 540
+FPS = 30
+FOURCC = cv2.VideoWriter_fourcc(*'MJPG')
+DELAY = int(1000/FPS)
 
 class HandStatus:
     def __init__(self):
@@ -40,9 +47,15 @@ def main():
     client = Client(('localhost',port))
     
     camera = cv2.VideoCapture(0)
+    camera.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_FRAME_WIDTH)
+    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_FRAME_HEIGHT)
+    camera.set(cv2.CAP_PROP_FPS, FPS)
+    camera.set(cv2.CAP_PROP_FOURCC, FOURCC)
+
     if camera is None or not camera.isOpened(): 
         print("No camera detected, ending process")
         return
+
     
     BaseOptions = mp.tasks.BaseOptions
     GestureRecognizer = mp.tasks.vision.GestureRecognizer
@@ -60,62 +73,44 @@ def main():
 
     hands = handsModule.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
-    lhand_status = HandStatus()
-    rhand_status = HandStatus()
+    previous = MouseStatus.IDLE
 
     timestamp = 0
     while True:
         ret, frame = camera.read()
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
         result = recognizer.recognize_for_video(mp_image, timestamp)
-        for landmarks in result.hand_landmarks:
-            coords = landmarks[9]
+        for idx, landmarks in enumerate(result.hand_landmarks):
+            coords = landmarks[0]
+            gesture = result.gestures[idx][0].category_name
+
             center = (int(coords.x * frame.shape[1]), int(coords.y * frame.shape[0]))
             frame = cv2.circle(frame, center , 1, (0,0,255), 10)
-            client.send(MsgType.hand_coords(coords.x, coords.y))
-        
-        for i, gesture in enumerate(result.gestures):
-            g = gesture[0].category_name
-            cv2.putText(frame, g, (10,50), cv2.FONT_HERSHEY_SIMPLEX,1,(255,255,255),1,2)
-            hs = lhand_status if result.handedness[i][0].category_name == 'Left' else rhand_status
-            if g == 'Thumb_Up':
-                if not hs.scroll_up:
-                    client.send(MsgType.scroll_up_on())
-                    hs.scroll_up = True
-            else:
-                if hs.scroll_up:
-                    client.send(MsgType.scroll_up_off())
-                    hs.scroll_up = False
-
-            if g == 'Thumb_Down':
-                if not hs.scroll_down:
-                    client.send(MsgType.scroll_down_on())
-                    hs.scroll_down = True
-            else:
-                if hs.scroll_down:
-                    client.send(MsgType.scroll_down_off())
-                    hs.scroll_down = False
-
-            if g == 'Closed_Fist':
-                if not hs.lmouse:
-                    client.send(MsgType.lmouse_on())
-                    hs.lmouse = True
-            else:
-                if hs.lmouse:
-                    client.send(MsgType.lmouse_off())
-                    hs.lmouse = False
+            cv2.putText(frame, gesture, (10,50), cv2.FONT_HERSHEY_SIMPLEX,1,(255,255,255),1,2)
             
+            hs = MouseStatus.MOVE | MouseStatus.ABSOLUTE #lhand_status if result.handedness[i][0].category_name == 'Left' else rhand_status
+
+            match gesture:
+                case "Thumb_Up":
+                    hs |= MouseStatus.WHEEL
+                case "Thumb_Down":
+                    hs |= MouseStatus.WHEEL 
+                case "Closed_Fist":
+                    hs |= MouseStatus.LMOUSE_DOWN 
+                case _:
+                    hs |= (MouseStatus.LMOUSE_UP if previous & MouseStatus.LMOUSE_DOWN else MouseStatus.IDLE)
+            previous = hs
+            client.send(MsgType.hand_update(coords.x, coords.y, hs)) #TODO: Priority hand?
 
         # display landmarks
         hand_result = hands.process(frame)
         if hand_result.multi_hand_landmarks:
             for landmarks in hand_result.multi_hand_landmarks:
                 drawingModule.draw_landmarks(frame, landmarks, handsModule.HAND_CONNECTIONS)
-        
-        cv2.imshow("test", frame)
-        if cv2.waitKey(16) & 0xFF == ord('q'): 
+        cv2.imshow("test", cv2.resize(frame, (0, 0), fx = 0.5, fy = 0.5))
+        if cv2.waitKey(DELAY) & 0xFF == ord('q'): 
             break
-        timestamp += 16
+        timestamp += DELAY
     camera.release()
     cv2.destroyAllWindows()
 

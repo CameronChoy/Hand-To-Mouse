@@ -75,45 +75,31 @@ int sock() {
     int recvbuflen = DEFAULT_BUFLEN;
     sprintf_s(str, sizeof(str), "Begining recv\n");
     OutputDebugStringA(str);
+    struct RecMessage messageBuffer;
     do {
 
         iResult = recv(ClientSocket, recvbuf, recvbuflen, 0);
         if (iResult > 0) {
-            sprintf_s(str, sizeof(str), "Bytes received: %d\n", iResult);
+            sprintf_s(str, sizeof(str), "Bytes received: %d %s\n", iResult, recvbuf);
             OutputDebugStringA(str);
 
-            memcpy(&msgType, recvbuf, sizeof(char));
-            memcpy(&data[0], recvbuf + sizeof(char), sizeof(float));
-            memcpy(&data[1], recvbuf + + sizeof(char) + sizeof(float), sizeof(float));
+            memcpy(&messageBuffer, recvbuf, sizeof(RecMessage));
 
-            sprintf_s(str, sizeof(str), "data: %c %f %f\n", msgType, data[0], data[1]);
-            OutputDebugStringA(str);
             INPUT inputs[1] = {};
-            switch (msgType) {
-                case '1': // cursor pos update
-                    SetCursorPos(1980 - (int)(data[0] * 1980), (int)(data[1] * 1080));
-                    break;
-                case '2': // lmouse on
+            switch (messageBuffer.msgType) {
+                case 'A': // cursor pos update
+                    sprintf_s(str, sizeof(str), "cursor update %ld %f %f\n", messageBuffer.handUpdate.flags, messageBuffer.handUpdate.mouseX, messageBuffer.handUpdate.mouseY);
+                    OutputDebugStringA(str);
                     inputs[0].type = INPUT_MOUSE;
-                    inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+                    inputs[0].mi.dwFlags = messageBuffer.handUpdate.flags;
+                    DWORD dx = 65535 - (int)(messageBuffer.handUpdate.mouseX * 65535);
+                    DWORD dy = (long)(messageBuffer.handUpdate.mouseY * 65535);
+                    sprintf_s(str, sizeof(str), "%ld %ld", dx, dy);
+                    OutputDebugStringA(str);
+                    inputs[0].mi.dx = 65535 - (long)(messageBuffer.handUpdate.mouseX * 65535);
+                    inputs[0].mi.dy = (long)(messageBuffer.handUpdate.mouseY * 65535);
                     SendInput(1, inputs, sizeof(INPUT));
-                    break;
-                case '3': // lmouse off
-                    inputs[0].type = INPUT_MOUSE;
-                    inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTUP;
-                    SendInput(1, inputs, sizeof(INPUT));
-                    break;
-                case '4': // rmouse on
-                    break;
-                case '5': // rmouse off
-                    break;
-                case '6': // scroll up on
-                    break;
-                case '7': // scroll up off
-                    break;
-                case '8': // scroll down on
-                    break;
-                case '9': // scroll down off
+                    //SetCursorPos(1980 - (int)(data[0] * 1980), (int)(data[1] * 1080));
                     break;
             }
 

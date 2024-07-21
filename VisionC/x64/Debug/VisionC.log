@@ -1,2 +1,3 @@
 ﻿  Server.cpp
+D:\VisionProject\VisionC\Server.cpp(73,10): warning C4101: 'msgType': unreferenced local variable
   VisionC.vcxproj -> D:\VisionProject\VisionC\x64\Debug\VisionC.exe
