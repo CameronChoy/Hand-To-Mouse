@@ -26,7 +26,7 @@ def main():
         print("missing args, needs [gesture_name]")
         exit(1)
     try:
-        os.chdir(r'D:\VisionProject\gesture_data')
+        os.chdir(r'gesture_data')
         if not os.path.isdir(sys.argv[1]): 
             print(f"No folder created, creating new {sys.argv[1]}")
             os.mkdir(sys.argv[1])
