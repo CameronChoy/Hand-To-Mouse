@@ -47,16 +47,17 @@ def main():
     client = Client(('localhost',port))
     
     camera = cv2.VideoCapture(0)
-    camera.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_FRAME_WIDTH)
-    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_FRAME_HEIGHT)
-    camera.set(cv2.CAP_PROP_FPS, FPS)
-    camera.set(cv2.CAP_PROP_FOURCC, FOURCC)
+    
 
     if camera is None or not camera.isOpened(): 
         print("No camera detected, ending process")
         return
 
-    
+    camera.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_FRAME_WIDTH)
+    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_FRAME_HEIGHT)
+    camera.set(cv2.CAP_PROP_FPS, FPS)
+    camera.set(cv2.CAP_PROP_FOURCC, FOURCC)
+
     BaseOptions = mp.tasks.BaseOptions
     GestureRecognizer = mp.tasks.vision.GestureRecognizer
     GestureRecognizerOptions = mp.tasks.vision.GestureRecognizerOptions
@@ -66,7 +67,7 @@ def main():
     
 
     options = GestureRecognizerOptions(
-        base_options=BaseOptions(model_asset_path="D:/VisionProject/gesture_recognizer.task"),
+        base_options=BaseOptions(model_asset_path="exported_model/gesture_recognizer.task"),
         running_mode=VisionRunningMode.VIDEO, num_hands=2)
 
     recognizer = GestureRecognizer.create_from_options(options)
