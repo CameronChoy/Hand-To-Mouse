@@ -25,7 +25,7 @@ class gr_model(keras.Model):
         #self.input1 = layers.InputLayer(input_shape=(1,127))
         self.dense1 = layers.Dense(128, "relu")
         self.dense2 = layers.Dense(64, "relu")
-        self.dense3 = layers.Dense(self.M, "relu")
+        self.dense3 = layers.Dense(self.M, "softmax")
         
 
     
@@ -73,24 +73,26 @@ def main():
 
     model = gr_model(id)
     model.compile(
-        optimizer=keras.optimizers.RMSprop(),
+        optimizer=keras.optimizers.Adam(),
         loss=keras.losses.SparseCategoricalCrossentropy(),
         metrics=[keras.metrics.SparseCategoricalAccuracy()],
     )   
+    
 
     history = model.fit(
         x_train,
         y_train,
         batch_size=64,
-        epochs=10,
+        epochs=100,
         validation_data=(x_test, y_test),
     )
 
-    #print(history.history)
     results = model.evaluate(x_test, y_test, batch_size=128)
     print("test loss, test acc:", results)
+
     os.chdir('..')
     model.save('model', save_format='tf')
+    print(model.summary())
     #m = load_model('model')
     #results = m.evaluate(x_test, y_test, batch_size=128)
     #print("test loss, test acc:", results)
