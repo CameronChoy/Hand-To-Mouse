@@ -1,6 +1,10 @@
 import os
 import tensorflow as tf
 import numpy as np
+import json
+import time
+from pathlib import Path
+from argparse import ArgumentParser
 # old numpy = 2.0.0
 # old ml-dtypes = 0.4.0
 assert tf.__version__.startswith('2')
@@ -43,10 +47,17 @@ def main():
     except OSError as e:
         print(e)
         exit(1)
+    
+    parser = ArgumentParser()
+    parser.add_argument('-name', '-n', type=Path, default=f"Model-{time.strftime('%Y-%m-%d--%H-%M-%S')}", dest='name')
+    parser.add_argument('-epoches', '-e', type=int, default=100, dest='epoches')
+    parser.add_argument('-batch', '-b', type=int, default=64, dest='batch')
+    args = parser.parse_args()
 
     data = []
     label = []
     id = 0
+    gestures = {}
     for dir in os.listdir():
         data_path = f"{dir}\data"
         if not os.path.isdir(data_path): 
@@ -61,10 +72,12 @@ def main():
                 data.append(h[1:]) # first value in data is imagenum, don't need
                 label.append(id)
             print(f"found {count} images")
+        gestures[id] = dir
         id += 1
     
     data = np.asarray(data)
     label = np.asarray(label)
+    print(gestures)
     
     # shuffle and split dataset
     x_train, x_test, y_train, y_test = train_test_split(data, label)
@@ -82,17 +95,27 @@ def main():
     history = model.fit(
         x_train,
         y_train,
-        batch_size=64,
-        epochs=100,
+        batch_size=args.batch,
+        epochs=args.epoches,
         validation_data=(x_test, y_test),
     )
 
-    results = model.evaluate(x_test, y_test, batch_size=128)
+    results = model.evaluate(x_test, y_test)
     print("test loss, test acc:", results)
 
+    
     os.chdir('..')
-    model.save('model', save_format='tf')
+    try:
+        os.chdir("Models")
+    except OSError as e:
+        print(e,"\nCreating Models dir")
+        os.mkdir("Models")
+        os.chdir("Models")
+
+    model.save(args.name, save_format='tf')
     print(model.summary())
+    with open(f"{args.name}/gestures.json","w") as f:
+        json.dump(gestures,f)
     #m = load_model('model')
     #results = m.evaluate(x_test, y_test, batch_size=128)
     #print("test loss, test acc:", results)
