@@ -1,8 +1,15 @@
 import sys
 import time
+import numpy as np
+from pathlib import Path
+import json
+from argparse import ArgumentParser, BooleanOptionalAction
 from client import Client, MsgType, MouseStatus
 import mediapipe as mp
 import cv2
+import torch
+from torch import load, argmax, tensor, float32
+#from keras.models import load_model
 
 # Gesture Recognizer:
 # result.gestures = [[Category(index, score, display_name, categgory_name),...]]
@@ -35,24 +42,31 @@ def configure_hand_space(lhand, rhand):
     pass
 
 def main():
-    if len(sys.argv) != 2:
-        print("missing args, needs [port]")
-        exit(1)
-    try:
-        port = int(sys.argv[1])
-    except ValueError:
-        print(f"Error: argument [port]='{sys.argv[1]}' must be an integer")
-        exit(1)
     
-    client = Client(('localhost',port))
+    parser = ArgumentParser()
+    parser.add_argument('-port', '-p', type=int, default=27015, dest='port')
+    parser.add_argument('-recognizer', '-r', type=Path, default='Models/default', dest='model_path')
+    parser.add_argument('-vidx', '-v', type=int, default=0, dest='video_index')
+    parser.add_argument('--use_gpu', '--g', action=BooleanOptionalAction, default=False, dest='gpu')
+    args = parser.parse_args()
+    device = torch.device('cuda' if torch.cuda.is_available() and args.gpu else 'cpu')
     
-    camera = cv2.VideoCapture(0)
-    
-
+    camera = cv2.VideoCapture(args.video_index)
     if camera is None or not camera.isOpened(): 
         print("No camera detected, ending process")
         return
 
+    try:
+        gesture_model = load(args.model_path, weights_only=False)#load_model(args.model_path)
+        gesture_model.eval()
+        with open(f"{args.model_path}/config.json") as f:
+            config = json.load(f)
+    except IOError as e:
+        print(e)
+        exit(1)
+    
+    client = Client(('localhost',args.port))
+    
     camera.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_FRAME_WIDTH)
     camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_FRAME_HEIGHT)
     camera.set(cv2.CAP_PROP_FPS, FPS)
@@ -64,22 +78,28 @@ def main():
     VisionRunningMode = mp.tasks.vision.RunningMode
     drawingModule = mp.solutions.drawing_utils
     handsModule = mp.solutions.hands
-    
 
+    
+    
+    '''
     options = GestureRecognizerOptions(
-        base_options=BaseOptions(model_asset_path="exported_model/gesture_recognizer.task"),
+        base_options=BaseOptions(model_asset_path="gesture_recognizer.task"),
         running_mode=VisionRunningMode.VIDEO, num_hands=2)
 
     recognizer = GestureRecognizer.create_from_options(options)
-
+    '''
     hands = handsModule.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
     previous = MouseStatus.IDLE
 
     timestamp = 0
     while True:
+        delta = time.time() * 1000 # amount of time in miliseconds to delay next loop
         ret, frame = camera.read()
+        
+        '''
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
+        
         result = recognizer.recognize_for_video(mp_image, timestamp)
         for idx, landmarks in enumerate(result.hand_landmarks):
             coords = landmarks[0]
@@ -87,7 +107,7 @@ def main():
 
             center = (int(coords.x * frame.shape[1]), int(coords.y * frame.shape[0]))
             frame = cv2.circle(frame, center , 1, (0,0,255), 10)
-            cv2.putText(frame, gesture, (10,50), cv2.FONT_HERSHEY_SIMPLEX,1,(255,255,255),1,2)
+            
             
             hs = MouseStatus.MOVE | MouseStatus.ABSOLUTE #lhand_status if result.handedness[i][0].category_name == 'Left' else rhand_status
 
@@ -102,14 +122,44 @@ def main():
                     hs |= (MouseStatus.LMOUSE_UP if previous & MouseStatus.LMOUSE_DOWN else MouseStatus.IDLE)
             previous = hs
             client.send(MsgType.hand_update(coords.x, coords.y, hs)) #TODO: Priority hand?
-
+        '''
         # display landmarks
         hand_result = hands.process(frame)
         if hand_result.multi_hand_landmarks:
             for landmarks in hand_result.multi_hand_landmarks:
                 drawingModule.draw_landmarks(frame, landmarks, handsModule.HAND_CONNECTIONS)
+            for i, handedness in enumerate(hand_result.multi_handedness): # enumerate every detected hand 
+                hand = 0 if handedness.classification[0].label == "Left" else 1
+                hand_data = [hand]
+                
+                for landmark in hand_result.multi_hand_landmarks[i].landmark: # Normalized landmarks
+                    hand_data.append(landmark.x)
+                    hand_data.append(landmark.y)
+                    hand_data.append(landmark.z)
+                for landmark in hand_result.multi_hand_world_landmarks[i].landmark: # World landmarks
+                    hand_data.append(landmark.x)
+                    hand_data.append(landmark.y)
+                    hand_data.append(landmark.z)
+                
+                x = tensor(np.array([hand_data])).type(float32).to(device)
+                gesture_id = str(argmax(gesture_model(x)))#str(gesture_model.predict([hand_data]).argmax())
+                gesture = config.gestures[gesture_id]
+
+                hand_coords = hand_result.multi_hand_landmarks[i].landmark[0]
+
+                center = (int(hand_coords.x * frame.shape[1]), int(hand_coords.y * frame.shape[0]))
+                frame = cv2.circle(frame, center , 1, (0,0,255), 10)    
+                
+                hs = MouseStatus.MOVE | MouseStatus.ABSOLUTE
+                control = config['controls'][gesture_id]
+                previous = hs
+
+                cv2.putText(frame, gesture, (10,50), cv2.FONT_HERSHEY_SIMPLEX,1,(255,255,255),1,2)
+        
         cv2.imshow("test", cv2.resize(frame, (0, 0), fx = 0.5, fy = 0.5))
-        if cv2.waitKey(DELAY) & 0xFF == ord('q'): 
+        delta = DELAY - (delta - time.time() * 1000)
+        if delta >= 1: cv2.waitKey(int(delta))
+        if cv2.pollKey() & 0xFF == ord('q'): 
             break
         timestamp += DELAY
     camera.release()
