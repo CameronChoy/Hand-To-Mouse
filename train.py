@@ -8,12 +8,6 @@ from argparse import ArgumentParser, BooleanOptionalAction
 # old ml-dtypes = 0.4.0
 #from mediapipe_model_maker import gesture_recognizer
 
-'''
-import tensorflow as tf
-from tensorflow import keras
-assert tf.__version__.startswith('2')
-from keras import layers
-'''
 from torch.utils.data import DataLoader, random_split
 from torch.optim import Adam
 import torch
@@ -21,50 +15,28 @@ from torch import int64, float32, no_grad, save, argmax
 from torch.nn import Linear, ReLU, Dropout, Softmax, Module, CrossEntropyLoss
 from torchinfo import summary
 from sklearn.model_selection import train_test_split
-
+import model
+from model import gr_torch_model
+    
 '''
-# 
-# Input: 42x3 landmarks normalized and world, 1x1 handness
-# Output: M x 1 probabilities one hot for M given gestures to learn
-class gr_model(keras.Model):
-    def __init__(self, gesture_count):
-        super().__init__()
-        self.M = gesture_count
+Trains and saves model to a given directory name in Models
 
-        #self.input1 = layers.InputLayer(input_shape=(1,127))
-        self.dense1 = layers.Dense(128, "relu")
-        self.dense2 = layers.Dense(64, "relu")
-        self.dense3 = layers.Dense(self.M, "softmax")
-        
+config data saved as json file in directory:
+- 'gesture_count' tells range of values model outputs
+- 'gestures' link model's output to gesture name
+- 'controls' link model's output to MouseStatus flag indicating action
+config_data = {
+    'gesture_count' : int
+    'gestures' : {
+        Model output val (str) : Gesture Name (str),
+    }
 
-    
-    def call(self, data):
-        x = self.dense1(data)
-        x = self.dense2(x)
-        return self.dense3(x)
+    'controls' : {
+        Model output val (str) : MouseStatus flag (int)
+    }
+
+}
 '''
-class gr_torch_model(Module):
-    def __init__(self, gesture_count, dropout_p = 0.5):
-        super(gr_torch_model, self).__init__()
-        self.dense1 = Linear(127,128)
-        self.dense2 = Linear(128,64)
-        self.dense3 = Linear(64, gesture_count)
-        self.relu = ReLU()
-        self.softmax = Softmax(dim=1)
-        self.dropout = Dropout(dropout_p)
-        self.float()
-        
-    
-    def forward(self, x):
-        x = self.dense1(x)
-        x = self.relu(x)
-        #x = self.dropout(x)
-        x = self.dense2(x)
-        x = self.relu(x)
-        x = self.dense3(x)
-        return self.softmax(x)
-    
-
 def train_model(name : Path, epoches : int = 100, batch_size : int = 64, device : torch.device = torch.device('cpu')):
     model_path, ext = os.path.splitext(name)
     model_path, name = os.path.split(model_path)
@@ -93,10 +65,11 @@ def train_model(name : Path, epoches : int = 100, batch_size : int = 64, device 
                 data.append(h[1:]) # first value in data is imagenum, don't need
                 label.append(id)
             print(f"found {count} images")
-        config_data['gestures'][id] = dir
-        config_data['controls'][id] = 1<<id
+        config_data['gestures'][int(id)] = dir
+        config_data['controls'][int(id)] = 1<<id
         id += 1
-
+    config_data['gesture_count'] = id
+    
     # shuffle and split dataset
     x_train, x_test, y_train, y_test = train_test_split(data, label)
     train_set = DataLoader(list(zip(x_train, y_train)),batch_size=batch_size, pin_memory=True if using_cuda else False)
@@ -144,7 +117,7 @@ def train_model(name : Path, epoches : int = 100, batch_size : int = 64, device 
     accuracy = correct / len(y_test)
     print(f"Training loss: {running_tloss}\tValidation loss: {running_vloss/i+1}")
     print(f"Training acc: {train_acc}\tValidation acc: {accuracy}")
-    '''
+    
     # Saving
     os.chdir('..')
     try:
@@ -154,14 +127,15 @@ def train_model(name : Path, epoches : int = 100, batch_size : int = 64, device 
     except OSError as e:
         print(e)
         return
-    save(model, name+'.pt')
+    save(model, 'model.pt')
     with open(f"config.json","w") as f:
         json.dump(config_data,f)
-    ''' 
+    '''
     x = np.array([x_train[0]])
     d = torch.tensor(x).type(float32)
     d = d.to(device)
     print(argmax(model(d)).item(), y_train[0])
+    '''
 
 if __name__ == '__main__':
     parser = ArgumentParser()

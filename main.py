@@ -9,6 +9,9 @@ import mediapipe as mp
 import cv2
 import torch
 from torch import load, argmax, tensor, float32
+import cursor
+import model
+from model import gr_torch_model
 #from keras.models import load_model
 
 # Gesture Recognizer:
@@ -41,41 +44,36 @@ class HandStatus:
 def configure_hand_space(lhand, rhand):
     pass
 
-def main():
+def startRecognizer(model_path : Path, video_index : int, device : torch.device):
     
-    parser = ArgumentParser()
-    parser.add_argument('-port', '-p', type=int, default=27015, dest='port')
-    parser.add_argument('-recognizer', '-r', type=Path, default='Models/default', dest='model_path')
-    parser.add_argument('-vidx', '-v', type=int, default=0, dest='video_index')
-    parser.add_argument('--use_gpu', '--g', action=BooleanOptionalAction, default=False, dest='gpu')
-    args = parser.parse_args()
-    device = torch.device('cuda' if torch.cuda.is_available() and args.gpu else 'cpu')
-    
-    camera = cv2.VideoCapture(args.video_index)
+    camera = cv2.VideoCapture(video_index)
     if camera is None or not camera.isOpened(): 
         print("No camera detected, ending process")
         return
 
     try:
-        gesture_model = load(args.model_path, weights_only=False)#load_model(args.model_path)
+        gesture_model = load(f"{model_path}/model.pt", weights_only=False).to(device)#load_model(model_path)
         gesture_model.eval()
-        with open(f"{args.model_path}/config.json") as f:
+        with open(f"{model_path}/config.json") as f:
             config = json.load(f)
+        print(config['gesture_count'], type(config['gesture_count']))
     except IOError as e:
         print(e)
-        exit(1)
+        print("Model path needs to link to directory.")
+        return
     
-    client = Client(('localhost',args.port))
+    #client = Client(('localhost',port))
     
     camera.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_FRAME_WIDTH)
     camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_FRAME_HEIGHT)
     camera.set(cv2.CAP_PROP_FPS, FPS)
     camera.set(cv2.CAP_PROP_FOURCC, FOURCC)
-
+    '''
     BaseOptions = mp.tasks.BaseOptions
     GestureRecognizer = mp.tasks.vision.GestureRecognizer
     GestureRecognizerOptions = mp.tasks.vision.GestureRecognizerOptions
     VisionRunningMode = mp.tasks.vision.RunningMode
+    '''
     drawingModule = mp.solutions.drawing_utils
     handsModule = mp.solutions.hands
 
@@ -142,19 +140,19 @@ def main():
                     hand_data.append(landmark.z)
                 
                 x = tensor(np.array([hand_data])).type(float32).to(device)
-                gesture_id = str(argmax(gesture_model(x)))#str(gesture_model.predict([hand_data]).argmax())
-                gesture = config.gestures[gesture_id]
+                gesture_id = str(argmax(gesture_model(x)).item())#str(gesture_model.predict([hand_data]).argmax())
+                gesture = config['gestures'][gesture_id]
 
                 hand_coords = hand_result.multi_hand_landmarks[i].landmark[0]
 
                 center = (int(hand_coords.x * frame.shape[1]), int(hand_coords.y * frame.shape[0]))
                 frame = cv2.circle(frame, center , 1, (0,0,255), 10)    
                 
-                hs = MouseStatus.MOVE | MouseStatus.ABSOLUTE
+                hs = MouseStatus.MOVE | MouseStatus.ABSOLUTE | int(config['controls'][gesture_id])
                 control = config['controls'][gesture_id]
                 previous = hs
 
-                cv2.putText(frame, gesture, (10,50), cv2.FONT_HERSHEY_SIMPLEX,1,(255,255,255),1,2)
+                cv2.putText(frame, gesture, (10*(i+1),50), cv2.FONT_HERSHEY_SIMPLEX,1,(255,255,255),1,2)
         
         cv2.imshow("test", cv2.resize(frame, (0, 0), fx = 0.5, fy = 0.5))
         delta = DELAY - (delta - time.time() * 1000)
@@ -166,4 +164,11 @@ def main():
     cv2.destroyAllWindows()
 
 if __name__ == '__main__':
-    main()
+    parser = ArgumentParser()
+    parser.add_argument('-recognizer', '-r', type=Path, default='Models/default', dest='model_path')
+    parser.add_argument('-vidx', '-v', type=int, default=0, dest='video_index')
+    parser.add_argument('--gpu', action=BooleanOptionalAction, default=True, dest='gpu')
+    args = parser.parse_args()
+    device = torch.device('cuda' if torch.cuda.is_available() and args.gpu else 'cpu')
+    print(device)
+    startRecognizer(args.model_path, args.video_index, device)
