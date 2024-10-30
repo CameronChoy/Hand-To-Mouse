@@ -27,4 +27,6 @@ class MouseStatus(wintypes.DWORD):
     extraInfo: additional info about mouse event
 '''
 def mouse_event(flags : MouseStatus, dx : wintypes.LONG, dy : wintypes.LONG, data : wintypes.DWORD, extraInfo = 0):
+    dx = int(65535 - dx * 65535)
+    dy = int(dy * 65535)
     ctypes.windll.user32.mouse_event(flags, dx,  dy, data, extraInfo)
