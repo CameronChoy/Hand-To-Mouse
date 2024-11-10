@@ -1,6 +1,6 @@
 WIP  
 
-Currently working on new gesture model  
+Currently working on gui 
 
 Planned:  
 Resize tracking space via gesture  
