@@ -1,6 +1,7 @@
 from gui import startGUI
 from recognizer import startRecognizer
 from threading import *
+from time import sleep
 from argparse import ArgumentParser, BooleanOptionalAction
 from pathlib import Path
 import torch
@@ -19,7 +20,9 @@ def main():
     t1=Thread(target=startRecognizer, args=(args.model_path, args.video_index, device)) 
     t1.start() 
     startGUI()
+    print('waiting')
     t1.join()
+    print("closing")
     
 
 if __name__ == '__main__':

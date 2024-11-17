@@ -2,6 +2,9 @@ import tkinter as tk
 from tkinter import ttk
 import config
 import thread_data
+from PIL import Image, ImageTk
+from time import sleep
+from datetime import datetime
 
 class LabelEntry(tk.Frame):
     def __init__(self, parent, text : str, textvariable : str = None):
@@ -52,6 +55,16 @@ class StatusWindow(tk.Frame):
     def __init__(self, parent):
         super().__init__(parent)
         ttk.Label(self,text='Status').pack()
+        self.cameraWindow = ttk.Label(self,text='Loading camera...')
+        self.cameraWindow.pack()
+        self.update_cameraView()
+    
+    def update_cameraView(self):
+        if thread_data.cameraView is not None and self.winfo_viewable() == 1:
+            self.cameraImage = ImageTk.PhotoImage(image=thread_data.cameraView)
+            self.cameraWindow.configure(text=datetime.now(), image=self.cameraImage)
+        self.after(64, self.update_cameraView)
+
         
 
 class MainWindow(tk.Tk):
@@ -79,6 +92,7 @@ class MainWindow(tk.Tk):
     
     def exit(self):
         thread_data.exit_event.set()
+        print('exiting')
         self.destroy()
     
 

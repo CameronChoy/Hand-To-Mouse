@@ -14,6 +14,7 @@ from torch import load, argmax, tensor, float32
 from cursor import mouse_event
 from model import gr_torch_model
 import thread_data
+from PIL import Image, ImageTk
 #from keras.models import load_model
 
 # Gesture Recognizer:
@@ -67,11 +68,10 @@ def startRecognizer(model_path : Path, video_index : int, device : torch.device)
 
     previous = MouseStatus.IDLE
 
-    timestamp = 0
-    while True:
+    while not thread_data.exit_event.is_set():
         startTime = datetime.now() # amount of time in miliseconds to delay next loop
         ret, frame = camera.read()
-        
+
         # display landmarks
         hand_result = hands.process(frame)
         if hand_result.multi_hand_landmarks:
@@ -108,19 +108,21 @@ def startRecognizer(model_path : Path, video_index : int, device : torch.device)
                 mouse_event(flags, normalized_coordinates.x, normalized_coordinates.y, 0)
 
                 cv2.putText(frame, gesture, (10,50*(i+1)), cv2.FONT_HERSHEY_SIMPLEX,1,(255,255,255),1,2)
-        
+
+        resizedframe = cv2.resize(frame, (0, 0), fx = 0.5, fy = 0.5)
+        frame = cv2.cvtColor(resizedframe, cv2.COLOR_BGR2RGBA)
+        thread_data.cameraView = Image.fromarray(frame)
+        #cv2.imshow("test", resizedframe)
+
         timeToDelay = DELAY - (datetime.now() - startTime).microseconds / 1000
-        cv2.imshow("test", cv2.resize(frame, (0, 0), fx = 0.5, fy = 0.5))
-        
         if timeToDelay >= 1: key = cv2.waitKey(int(timeToDelay))
         else: key = cv2.pollKey()
+
         if key & 0xFF == ord('q'): 
             break
-        if thread_data.exit_event.is_set():
-            break
-        timestamp += DELAY
     camera.release()
     cv2.destroyAllWindows()
+    print("recognizer closing")
 
 if __name__ == '__main__':
     parser = ArgumentParser()
