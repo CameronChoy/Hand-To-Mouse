@@ -21,6 +21,7 @@ def main():
     t1.start() 
     startGUI()
     print('waiting')
+    thread_data.exit_event.set()
     t1.join()
     print("closing")
     
