@@ -15,7 +15,7 @@ from cursor import mouse_event
 from model import gr_torch_model
 import thread_data
 from PIL import Image, ImageTk
-from config import load_config_file, valid_config_file, ConfigKeys
+from config import load_config_file, valid_config_file, ConfigKey
 #from keras.models import load_model
 
 # Gesture Recognizer:
@@ -99,15 +99,15 @@ def start_recognizer(model_path : Path, video_index : int, device : torch.device
                 
                 x = tensor(np.array([hand_data])).type(float32).to(device)
                 gesture_id = str(argmax(gesture_model(x)).item())
-                gesture = config[ConfigKeys.CONFIG_GESTURES][gesture_id]
+                gesture = config[ConfigKey.GESTURES][gesture_id]
 
                 hand_coords = hand_result.multi_hand_landmarks[i].landmark[0]
 
                 center = (int(hand_coords.x * frame.shape[1]), int(hand_coords.y * frame.shape[0]))
                 frame = cv2.circle(frame, center , 1, (0,0,255), 10)    
                 
-                flags = MouseStatus.MOVE | MouseStatus.ABSOLUTE | int(config[ConfigKeys.CONFIG_CONTROLS][gesture_id])
-                if config[ConfigKeys.CONFIG_CONTROLS][gesture_id] == MouseStatus.IDLE:
+                flags = MouseStatus.MOVE | MouseStatus.ABSOLUTE | int(config[ConfigKey.CONTROLS][gesture_id])
+                if config[ConfigKey.CONTROLS][gesture_id] & MouseStatus.LMOUSE_DOWN == 0:
                     flags |= MouseStatus.LMOUSE_UP if previous & MouseStatus.LMOUSE_DOWN else MouseStatus.IDLE
                 previous = flags
 
