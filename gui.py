@@ -1,5 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, StringVar, filedialog
+from cursor import MouseStatus
+import json
 import config
 from config import ConfigKey, ACTIONNAMES, ActionName
 import thread_data
@@ -48,6 +50,24 @@ class LabelCombo(tk.Frame):
     def set_label(self, value : str):
         self.label.config(text=value)
 
+class LabelCheck(tk.Frame):
+    def __init__(self, parent, text : str = "", labelside = 'top', initval : bool = False, command = None):
+        super().__init__(parent)
+        self.checkval = tk.BooleanVar(value = initval)
+        self.label = ttk.Label(self, text=text)
+        self.label.pack(side=labelside)
+        self.check = ttk.Checkbutton(self, variable=self.checkval, command=command)
+        self.check.pack()
+    # Get checkbox value
+    def get(self):
+        return self.checkval.get()
+    # Set checkbox value
+    def set(self, value : bool):
+        self.checkval.set(value)
+    # Set label text
+    def set_label(self, value : str):
+        self.label.config(text=value)
+
 class ModelConfigWindow(tk.Frame):
     def __init__(self, parent):
         super().__init__(parent)
@@ -55,11 +75,26 @@ class ModelConfigWindow(tk.Frame):
         self.title.pack()
         self.names = []
         self.controls = []
+        self.flagChecks = {}
+        self.flagframe = tk.Frame(self)
+        self.flagframe.pack()
+        self.currentselect = -1
+        for flag in vars(MouseStatus):
+            if flag.startswith('_'): continue
+            checkButton = LabelCheck(self.flagframe, text=flag.lower(), command=self.setSelectedToCustom)
+            checkButton.pack(anchor='nw', side='left', padx=4)
+            self.flagChecks[flag] = checkButton
+        
         if config.model_config != None: 
             self.updateDisplay(config.model_config)
     
     # Update configs being displayed
     def updateDisplay(self, config : dict):
+        for x in self.names:
+            x.destroy()
+        for x in self.controls:
+            x.destroy()
+
         self.names = []
         self.controls = []
         gc = config[ConfigKey.GESTURECOUNT]
@@ -69,25 +104,110 @@ class ModelConfigWindow(tk.Frame):
             initval = ActionName[c] if c in ActionName else str(c)
             lc = LabelCombo(self,text=f"Action {i}", values=ACTIONNAMES, initval=initval)
 
-            le.pack()
-            lc.pack()
+            selectfunc = lambda event, id=i: self.updateFlags(id)
+            le.bind("<FocusIn>", selectfunc)
+            lc.bind("<FocusIn>", selectfunc)
+            
+            le.pack(anchor='nw')
+            lc.pack(anchor='nw', pady=(4,10))
             self.names.append(le)
             self.controls.append(lc)
     
+    # Update flag checkboxes to selected gesture
+    def updateFlags(self, id):
+
+        # Signify what's selected
+        if self.currentselect != -1:
+            self.names[self.currentselect].configure(bg="SystemButtonFace")
+            self.controls[self.currentselect].configure(bg="SystemButtonFace")
+        self.currentselect = id
+        self.names[self.currentselect].configure(bg="#FF0000")
+        self.controls[self.currentselect].configure(bg="#FF0000")
+
+        controls = self.convertStrToFlags(self.controls[id].get())
+        for flag in vars(MouseStatus):
+            if flag.startswith('_'): continue
+            f = getattr(MouseStatus, flag)
+            self.flagChecks[flag].set(controls & f != 0)
+
+    # Update currently selected gesture action to flag checkboxes
+    def setSelectedToCustom(self):
+        if self.currentselect == -1: return
+        self.controls[self.currentselect].set(self.convertFlagsToStr())
+
+    # Convert string to flag
+    def convertStrToFlags(self, controls):
+
+        # Binary string
+        try:
+            flags = int(controls,2)
+            return flags
+        except ValueError:
+            pass
+
+        flags = 0
+        match controls:
+            case "Left click":
+                flags = MouseStatus.LMOUSE_DOWN
+            case "Right click":
+                flags = MouseStatus.RMOUSE_DOWN
+            case "Middle click":
+                flags = MouseStatus.MIDDLE_DOWN
+            case "Scroll up":
+                flags = MouseStatus.WHEEL
+            case "Scroll down":
+                flags = MouseStatus.WHEEL
+            case _:
+                if controls.isdigit():
+                    flags = int(controls)
+
+        return flags
+    
+    # Convert flag checkboxes to an string digit
+    def convertFlagsToStr(self):
+        flags = 0
+        for flag in vars(MouseStatus):
+            if flag.startswith('_') or not self.flagChecks[flag].get(): continue
+            f = getattr(MouseStatus, flag)
+            flags |= f
+        return str(flags)
+    
     # Apply config options
     def applyConfig(self):
-        pass
+        gc = len(self.names)
+        config_data = {ConfigKey.GESTURES : {}, ConfigKey.CONTROLS : {}, ConfigKey.GESTURECOUNT : gc}
+        for i in range(gc):
+            name = self.names[i].get()
+            config_data[ConfigKey.GESTURES][str(i)] = name
+
+            controls = self.convertStrToFlags(self.controls[i].get())
+            config_data[ConfigKey.CONTROLS][str(i)] = controls
+        return config_data
 
     # Save and apply config options
-    def saveConfig(self):
-        self.applyConfig()
-        pass
+    def saveConfig(self, path : str):
+        config_data = self.applyConfig()
+        try:
+            with open(f"{path}/config.json","w") as f:
+                json.dump(config_data,f)
+        except OSError as e:
+            print(e)
+        
+
+    # Reset flag checkboxes
+    def clearFlags(self):
+        self.currentselect = -1
+        for flag in vars(MouseStatus):
+            if flag.startswith('_'): continue
+            self.flagChecks[flag].set(False)
+
 
 class TrainWindow(tk.Frame):
     def __init__(self, parent):
         super().__init__(parent)
         self.title = ttk.Label(self,text='Customize')
         self.title.pack()
+        self.currentdir = ""
 
         self.modelFolderFrame = ttk.Frame(self)
         self.modelFolderFrame.pack(side='top', anchor='nw', fill='none')
@@ -99,8 +219,8 @@ class TrainWindow(tk.Frame):
         self.configWindow = ModelConfigWindow(self)
         self.configWindow.pack(side='top', anchor='nw',fill='none')
 
-        self.applyConfigButton = ttk.Button(self, text="Apply", command=self.configWindow.applyConfig())
-        self.saveConfigButton = ttk.Button(self, text="Save and Apply", command=self.configWindow.saveConfig())
+        self.applyConfigButton = ttk.Button(self, text="Apply", command=self.configWindow.applyConfig)
+        self.saveConfigButton = ttk.Button(self, text="Save and Apply", command=lambda path = self.currentdir: self.configWindow.saveConfig(path=path))
         self.saveConfigButton.pack(side='right', anchor='ne')
         self.applyConfigButton.pack(side='right', anchor='ne')
     
@@ -111,7 +231,9 @@ class TrainWindow(tk.Frame):
         config_file = config.load_config_file(dir, False)
         if config.valid_config_file(config_file):
             self.configWindow.updateDisplay(config_file)
+            self.configWindow.clearFlags()
             self.modelFolderLabel.config(text=dir)
+            self.currentdir = dir
         else:
             self.modelFolderLabel.config(text="Failed to find 'config.json'")
         
@@ -161,7 +283,7 @@ class MainWindow(tk.Tk):
         super().__init__()
 
         self.title("Hand Cursor")
-        self.geometry("540x540")
+        self.geometry("1280x720")
         self.tabs = ttk.Notebook(self)
         self.tabs.add(StatusWindow(self.tabs), text='Status')
         self.tabs.add(TrainWindow(self.tabs), text='Customize')

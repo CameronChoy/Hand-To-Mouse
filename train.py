@@ -15,6 +15,7 @@ from torch import int64, float32, no_grad, save, argmax
 from torch.nn import Linear, ReLU, Dropout, Softmax, Module, CrossEntropyLoss
 from torchinfo import summary
 from sklearn.model_selection import train_test_split
+from config import ConfigKey
 import model
 from model import gr_torch_model
     
@@ -36,7 +37,8 @@ config_data = {
     }
 
 }
-'''
+'''    
+
 def train_model(name : Path, epoches : int = 100, batch_size : int = 64, device : torch.device = torch.device('cpu')):
     model_path, ext = os.path.splitext(name)
     model_path, name = os.path.split(model_path)
@@ -50,7 +52,7 @@ def train_model(name : Path, epoches : int = 100, batch_size : int = 64, device 
     data = []
     label = []
     id = 0
-    config_data = {'gestures' : {}, 'controls' : {}}
+    config_data = {ConfigKey.GESTURES : {}, ConfigKey.CONTROLS : {}}
     for dir in os.listdir():
         data_path = f"{dir}\data"
         if not os.path.isdir(data_path): 
@@ -65,10 +67,10 @@ def train_model(name : Path, epoches : int = 100, batch_size : int = 64, device 
                 data.append(h[1:]) # first value in data is imagenum, don't need
                 label.append(id)
             print(f"found {count} images")
-        config_data['gestures'][int(id)] = dir
-        config_data['controls'][int(id)] = 1<<id
+        config_data[ConfigKey.GESTURES][int(id)] = dir
+        config_data[ConfigKey.CONTROLS][int(id)] = 1<<id
         id += 1
-    config_data['gesture_count'] = id
+    config_data[ConfigKey.GESTURECOUNT] = id
     
     # shuffle and split dataset
     x_train, x_test, y_train, y_test = train_test_split(data, label)
